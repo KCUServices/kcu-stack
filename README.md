@@ -1,5 +1,7 @@
 # KCU Stack 🧱
 
+[![Verificar](https://github.com/KCUServices/kcu-stack/actions/workflows/verificar.yml/badge.svg)](https://github.com/KCUServices/kcu-stack/actions/workflows/verificar.yml)
+
 **O nosso setup completo, como ele está a funcionar hoje.** São quatro máquinas em casa, um servidor Proxmox com 11 serviços, IA local a correr sem nuvem e as apps que usamos todos os dias. Para cada peça dizemos *para que serve* e *porque escolhemos assim*.
 
 > Isto não é um tutorial de "copia e cola". É um mapa: vê o que te faz sentido e adapta ao teu. Nos vídeos mostramos cada parte a ser usada, sem cortes.
