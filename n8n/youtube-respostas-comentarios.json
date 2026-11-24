@@ -1,0 +1,228 @@
+{
+  "name": "YouTube: respostas automáticas a comentários",
+  "nodes": [
+    {
+      "id": "mon292-cron",
+      "name": "De 10 em 10 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "mon292-youtube_get_channel_statistics",
+      "name": "Confirmar canal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://backend.composio.dev/api/v3/tools/execute/YOUTUBE_GET_CHANNEL_STATISTICS",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user_id: 'o-teu-user-id', version: 'latest', arguments: { mine: true, part: 'id' } }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "O teu token (cria esta credencial)"
+        }
+      }
+    },
+    {
+      "id": "mon292-canal-certo-",
+      "name": "Canal certo?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Sem conta YouTube ligada no Composio: não faz nada (fica à espera da autorização).\n// Conta ligada a outro canal (ex. o pessoal): pára com erro, nunca responde com o canal errado.\nconst r = $json;\nconst erro = JSON.stringify(r.error || '');\nif (erro.includes('ConnectedAccountNotFound')) return [];\nif (!r.successful) throw new Error('Composio (canal): ' + erro.slice(0, 300));\nconst id = (((r.data || {}).items || [])[0] || {}).id;\nif (id !== 'O_ID_DO_TEU_CANAL') throw new Error('A conta YouTube ligada é do canal ' + id + ', não do o teu canal. Não respondo.');\nreturn [{ json: { ok: true } }];"
+      }
+    },
+    {
+      "id": "mon292-youtube_list_comment_threads2",
+      "name": "Ler comentários",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://backend.composio.dev/api/v3/tools/execute/YOUTUBE_LIST_COMMENT_THREADS2",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user_id: 'o-teu-user-id', version: 'latest', arguments: { part: 'snippet,replies', allThreadsRelatedToChannelId: 'O_ID_DO_TEU_CANAL', maxResults: 100, order: 'time', textFormat: 'plainText' } }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "O teu token (cria esta credencial)"
+        }
+      }
+    },
+    {
+      "id": "mon292-escolher-resposta",
+      "name": "Escolher resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// MON-292: regra das respostas automáticas aos comentários do YouTube (o teu canal).\n// O YouTube não tem DM: a resposta é pública e aponta para a descrição.\n// Este código é o corpo do nó Code \"Escolher resposta\"; aqui exporta-se para o teste.\n// Entrada: resposta de commentThreads.list (part=snippet,replies, allThreadsRelatedToChannelId).\n\n// Textos do Growth (MON-293). A variação sai do id do comentário: estável entre execuções.\nconst TEXTO = {\n  generico: ['O link está na descrição do vídeo 👆', 'Está tudo explicado na descrição do vídeo 👆',\n    'Achas o link na descrição deste vídeo 👆'],\n  produto: ['O link para NOME está na descrição do vídeo 👆', 'NOME está na descrição deste vídeo, só precisas de abrir 👆',\n    'Encontras NOME na descrição do vídeo 👆'],\n};\nconst variacao = (lista, id) => lista[[...String(id)].reduce((h, c) => h + c.charCodeAt(0), 0) % lista.length];\nconst frase = (modelo, nome) => {\n  const t = modelo.replace('NOME', nome);\n  return t.charAt(0).toUpperCase() + t.slice(1);                // \"o PIGGY...\" no início fica \"O PIGGY...\"\n};\nconst PRODUTOS = [\n  { palavra: 'playbook', nome: 'o Playbook de Proteção', slug: 'playbook-servidor' },\n  { palavra: 'piggy', nome: 'o PIGGY + LifeOS', slug: 'piggy-lifeos' },\n  { palavra: 'pihole', nome: 'o Pi-hole anti-apostas', slug: 'pihole-apostas' },\n  { palavra: 'ajuda', nome: 'a Assistência KCU', slug: 'assistencia' },\n  // MON-298 (aprovado 24/10): produto novo, está na mesma página de funil dos outros.\n  { palavra: 'checklist', nome: 'a Checklist de Segurança do Servidor', slug: 'playbook-servidor' },\n];\nconst norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/-/g, '');\nconst temPalavra = (t, p) => new RegExp('(^|[^a-z0-9])' + p + '([^a-z0-9]|$)').test(t);\n\n// threads: items da API; canal: id do canal o teu canal; respondidos: { commentId: isoDate } (static data do workflow)\nfunction escolher(threads, canal, respondidos) {\n  const out = [];\n  for (const t of threads || []) {\n    const top = (t.snippet && t.snippet.topLevelComment) || {};\n    const s = top.snippet || {};\n    const autor = (s.authorChannelId && s.authorChannelId.value) || '';\n    if (!top.id || respondidos[top.id]) continue;                // nunca duas vezes\n    if (autor === canal) continue;                               // nunca ao próprio canal\n    if (t.snippet && t.snippet.canReply === false) continue;\n    const jaRespondeu = ((t.replies && t.replies.comments) || [])\n      .some(r => ((r.snippet.authorChannelId || {}).value || '') === canal);\n    if (jaRespondeu) { respondidos[top.id] = 'ja-tinha'; continue; } // respondido à mão ou antes da tabela\n    const texto = norm(s.textOriginal || s.textDisplay);\n    if (!texto.trim()) continue;\n    const p = PRODUTOS.find(p => temPalavra(texto, p.palavra));\n    out.push({ parentId: top.id, videoId: s.videoId || (t.snippet && t.snippet.videoId) || '',\n      palavra: p ? p.palavra : '', texto: p ? frase(variacao(TEXTO.produto, top.id), p.nome) : variacao(TEXTO.generico, top.id) });\n  }\n  return out;\n}\n\n// Ponto 2: a descrição tem um link /go/<slug>/ do funil?\nconst RE_GO = /https?:\\/\\/o-teu-site\\.exemplo\\/go\\/([a-z0-9-]*)\\/?/i;\nfunction linkDescricao(descricao) {\n  const m = String(descricao || '').match(RE_GO);\n  return m ? (m[1] || '(índice)') : null;\n}\n\n// --- n8n ---\nconst r = $json;\nif (!r.successful) throw new Error('Composio (comentários): ' + JSON.stringify(r.error || '').slice(0, 300));\nconst st = $getWorkflowStaticData('global');\nst.respondidos = st.respondidos || {};\nconst res = escolher((r.data || {}).items || [], 'O_ID_DO_TEU_CANAL', st.respondidos);\nreturn res.map(x => ({ json: x }));"
+      }
+    },
+    {
+      "id": "mon292-youtube_create_comment_reply",
+      "name": "Responder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://backend.composio.dev/api/v3/tools/execute/YOUTUBE_CREATE_COMMENT_REPLY",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user_id: 'o-teu-user-id', version: 'latest', arguments: { parentId: $json.parentId, textOriginal: $json.texto } }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "O teu token (cria esta credencial)"
+        }
+      }
+    },
+    {
+      "id": "mon292-marcar-respondido",
+      "name": "Marcar respondido",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Só marca como respondido o que o YouTube aceitou; o resto tenta outra vez daqui a 10 min.\nconst st = $getWorkflowStaticData('global');\nst.respondidos = st.respondidos || {};\nconst pedidos = $('Escolher resposta').all();\nconst falhas = [];\nconst out = $input.all().map((it, i) => {\n  const p = pedidos[i].json;\n  if (it.json.successful) st.respondidos[p.parentId] = new Date().toISOString();\n  else falhas.push(p.parentId + ': ' + JSON.stringify(it.json.error || '').slice(0, 200));\n  return { json: { parentId: p.parentId, videoId: p.videoId, texto: p.texto, ok: !!it.json.successful } };\n});\nif (falhas.length) throw new Error('Respostas falhadas: ' + falhas.join(' | '));\nreturn out;"
+      }
+    }
+  ],
+  "connections": {
+    "De 10 em 10 min": {
+      "main": [
+        [
+          {
+            "node": "Confirmar canal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmar canal": {
+      "main": [
+        [
+          {
+            "node": "Canal certo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Canal certo?": {
+      "main": [
+        [
+          {
+            "node": "Ler comentários",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler comentários": {
+      "main": [
+        [
+          {
+            "node": "Escolher resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escolher resposta": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder": {
+      "main": [
+        [
+          {
+            "node": "Marcar respondido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,923 @@
+{
+  "name": "Instagram: comentário → resposta pública + DM com o link",
+  "nodes": [
+    {
+      "id": "9aec8bd4-a00b-41fe-8599-7d87abd67d36",
+      "name": "Meta: verificação (GET)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "path": "instagram-comentarios",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "442a4e64-10a5-459b-b8ad-01ac44706e40",
+      "name": "Responder challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        0
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.verify_token'] === 'TROCA_PELO_TEU_VERIFY_TOKEN' ? $json.query['hub.challenge'] : 'forbidden' }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "1f87b3cd-3b82-4257-96f8-1b294a39b913",
+      "name": "Meta: comentário (POST)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        272
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "instagram-comentarios",
+        "options": {}
+      }
+    },
+    {
+      "id": "8551277b-c79c-43a5-bd8b-00d83d5a3429",
+      "name": "Extrair comentários",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        272
+      ],
+      "parameters": {
+        "jsCode": "// Extrai os comentários novos do payload da Meta.\n// Ignora comentários da própria conta (evita loops quando o bot responde).\nconst OWN_USERNAMES = ['o-teu-canal', 'a_tua_conta', 'segunda_conta'];\nconst out = [];\nfor (const item of $input.all()) {\n  const body = item.json.body || {};\n  for (const entry of body.entry || []) {\n    for (const ch of entry.changes || []) {\n      if (ch.field !== 'comments') continue;\n      const v = ch.value || {};\n      const from = v.from || {};\n      if (!v.id || !v.media || !v.media.id) continue;\n      if (from.id === entry.id) continue;\n      if (OWN_USERNAMES.includes((from.username || '').toLowerCase())) continue;\n      out.push({ json: {\n        igUserId: entry.id,\n        commentId: v.id,\n        mediaId: v.media.id,\n        texto: v.text || '',\n        username: from.username || ''\n      }});\n    }\n  }\n}\nreturn out;\n"
+      }
+    },
+    {
+      "id": "e660617e-ddbb-433d-9819-87bebd002433",
+      "name": "Ler reel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        528,
+        272
+      ],
+      "parameters": {
+        "url": "=https://graph.instagram.com/v23.0/{{ $json.mediaId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "permalink,caption"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "O teu token (cria esta credencial)"
+        }
+      }
+    },
+    {
+      "id": "adcb3bfd-c0a5-4948-a1f5-82836db5370e",
+      "name": "Escolher link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        272
+      ],
+      "parameters": {
+        "jsCode": "// Decide que link mandar, conforme o reel comentado.\n// 0) tabela automática (webhook 'Registar publicação')\n// 1) pelo ID/código do reel (POR_REEL)\n// 2) produtos: palavra no comentário ou na legenda do reel (POR_PRODUTO). Funciona sem mediaId,\n//    por isso um reel publicado à mão com \"Comenta PIGGY\" fica ligado sozinho.\n// 3) Reels sem correspondência recebem o link do repositório (índice de todos os vídeos).\nconst POR_REEL = {\n  // EXEMPLO: o ID do reel (aparece no evento do comentario) -> o que mandar.\n  'ID_DE_UM_REEL': { nome: 'o projeto do video', url: 'https://o-teu-site.exemplo/go/projeto/' },\n  'ID_DE_OUTRO_REEL': { tipo: 'guia', nome: 'o guia completo', url: 'https://o-teu-site.exemplo/go/guia/' },\n};\n// Produtos da loja. url = página de FUNIL /go/<slug> (publicar/funil.json), nunca a página do produto.\n// palavra = a palavra do CTA (\"Comenta PIGGY\"), em minúsculas.\n// abertura = fim da frase do DM de abertura; titulo/sub/botao = cartão final com o link.\nconst POR_PRODUTO = [\n  // EXEMPLO: palavra do CTA (\"Comenta GUIA\") -> mensagem e link. Poe aqui os teus produtos.\n  { palavra: 'guia', produto: true, nome: 'o guia',\n    abertura: 'o link do guia 📘',\n    titulo: 'Aqui esta o guia 👇', sub: 'Uma frase curta sobre o que a pessoa ganha.',\n    botao: 'Ver o guia', url: 'https://o-teu-site.exemplo/go/guia/' },\n];\n// Variantes por tipo de reel (spec MON-503, documento interno).\n// {nome} = @username do comentário; sem username tratável, só as frases sem {nome}.\nconst RESPOSTAS = {\n  repositorio: [\n    'Enviei-te o repositório por DM 🔧',\n    'Repositório a caminho das tuas mensagens',\n    'Já tens o repositório no DM 👀',\n    'Manda uma vista de olhos às mensagens, repositório enviado',\n    '{nome}, o repositório já está no DM 🚀',\n    'Repositório enviado, bom proveito',\n    'Está nas mensagens: o repositório 📩',\n    'Mandei-te o link do repositório, vê os DMs',\n    '{nome}, repositório a caminho 👀',\n    'Repositório despachado por mensagem',\n    'Vai ver os DMs, o repositório já lá está 🔧',\n    '{nome}, repositório enviado por mensagem',\n  ],\n  guia: [\n    'Enviei-te o guia por DM 📩',\n    'O guia já está nas tuas mensagens',\n    'Mandei-te o passo a passo, vê os DMs 👀',\n    'Guia a caminho das mensagens',\n    '{nome}, o guia já está no DM 🛡️',\n    'Está feito, guia enviado por mensagem',\n    'Guia enviado, bom proveito 🔧',\n    'Vai às mensagens, o guia já lá está',\n    '{nome}, guia a caminho 👀',\n    'Mandei o passo a passo por DM',\n    'Guia despachado, está nas mensagens 📩',\n    'Está no DM: o guia completo',\n  ],\n  produto: [\n    'Mandei-te o link por DM 🐷',\n    'Já tens tudo nas mensagens',\n    'Enviei o link do produto por DM 👀',\n    'Está no DM, bom proveito',\n    '{nome}, o link já está nas mensagens 📩',\n    'Despachado por mensagem',\n    'Link enviado, vê os DMs 🔧',\n    '{nome}, já tens o link no DM',\n    'Mandei por mensagem, espreita os DMs 👀',\n    'Está feito: link enviado',\n    '{nome}, link a caminho 📩',\n    'Enviado por DM, bom proveito',\n  ],\n  noticia: [\n    'Mandei-te a fonte por DM 📩',\n    'Já tens o link nas mensagens',\n    'Enviei-te o artigo por DM 👀',\n    'Está no DM, a fonte completa',\n    '{nome}, a notícia já está nas mensagens 🔗',\n    'Despachado: link da fonte',\n    'Mandei o link oficial por mensagem 📩',\n    '{nome}, já tens tudo no DM',\n    'Enviei por mensagem, vê os DMs 👀',\n    'Está feito, fonte enviada',\n    '{nome}, link a caminho 🔗',\n    'Fonte enviada por DM',\n  ],\n};\n// 'link' (índice, loja, Blender, jogos): só as frases neutras do produto, sem 🐷 nem «produto».\nRESPOSTAS.link = RESPOSTAS.produto.filter(r => !/🐷|produto/.test(r));\nconst ABERTURAS = [\n    'Boa! 👋',\n    'Obrigado pelo comentário.',\n    'Chegou a tua vez 👀',\n    'Aqui tens.',\n    'Boa escolha comentar isto.',\n    'Então, vamos a isto 🚀',\n];\n// MON-504: nunca repete a última de cada lista (static data do workflow, 'ultimas').\nconst ultimas = (g => g.ultimas || (g.ultimas = {}))($getWorkflowStaticData('global'));\nconst sorteia = (xs, chave) => {\n  const op = xs.length > 1 ? xs.filter(x => x !== ultimas[chave]) : xs;\n  return (ultimas[chave] = op[Math.floor(Math.random() * op.length)]);\n};\nconst resposta = (alvo, username) => {\n  const tipo = alvo.tipo || (alvo.produto || alvo.funil ? 'produto' : 'repositorio');\n  let xs = (RESPOSTAS[tipo] || RESPOSTAS.link).concat(alvo.respostas || []);\n  if (!/piggy/i.test(alvo.nome || '')) xs = xs.filter(r => !r.includes('🐷'));\n  const u = /^[a-z0-9._]{1,30}$/i.test(username || '') ? '@' + username : '';\n  if (!u) xs = xs.filter(r => !r.includes('{nome}'));\n  return sorteia(xs, tipo).replace('{nome}', u);\n};\n// Mensagens da MON-273 (documento \"entrega\"). PALAVRA é trocada pela palavra do vídeo.\nconst FUNIL = {\n  generico: 'Boa! Se quiseres o pack que uso para isto, comenta PALAVRA que te mando o link.',\n  como: 'Tenho isso num pack pronto, sem complicação. Comenta PALAVRA e mando-te o link por DM.',\n  tecnica: 'Dá trabalho a primeira vez, sim. Fiz um pack passo a passo para isto, comenta PALAVRA e envio-te o link.',\n  preco: 'É um pack único, pagas uma vez e é teu. Comenta PALAVRA e vês o preço e o que vem no link.',\n  dm: 'Aqui tens o link: LINK\\n\\nBom proveito!',\n};\nconst tipoComentario = t =>\n  /pago|preco|quanto|custa|valor|caro|gratis|borla|euros|€/.test(t) ? 'preco'\n  : /nao sei|nao consigo|configur|instal|trabalho|dificil|complicad|erro|nao funciona/.test(t) ? 'tecnica'\n  : /como|onde|consigo|arranj|tutorial|ensina|quero|link/.test(t) ? 'como'\n  : 'generico';\nconst temPalavra = (t, p) => new RegExp('(^|[^a-z0-9])' + p + '([^a-z0-9]|$)').test(t);\nconst norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\n\nconst posts = $input.all();\nconst out = [];\nposts.forEach((p, i) => {\n  const c = $('Extrair comentários').itemMatching(i).json;\n  const permalink = p.json.permalink || '';\n  const legenda = norm(p.json.caption);\n  const texto = norm(c.texto);\n  let alvo = null;\n  // 0) Tabela automática, preenchida pelo webhook 'Registar publicação' (static data do workflow).\n  const auto = (($getWorkflowStaticData('global').links) || {})[c.mediaId];\n  if (auto && auto.url) alvo = { nome: auto.nome, url: auto.url, tipo: auto.tipo };\n  if (!alvo) for (const [codigo, v] of Object.entries(POR_REEL)) if (permalink.includes(codigo) || c.mediaId === codigo) alvo = v;\n  // Reel registado ou em POR_REEL com «Comenta PALAVRA» de um produto do funil: aplica a regra\n  // do funil com o link desse vídeo (MON-279; os reels do pipeline chegam todos registados).\n  const funilLeg = POR_PRODUTO.find(v => v.funil && new RegExp('comenta\\\\W+' + v.palavra + '([^a-z0-9]|$)').test(legenda));\n  if (alvo && funilLeg) alvo = { ...funilLeg, url: alvo.url };\n  // MON-300: comentário que é só a palavra de outro produto do funil (CHECKLIST num reel do PLAYBOOK) leva esse produto.\n  const exata = POR_PRODUTO.find(v => v.funil && texto.replace(/[^a-z0-9]/g, '') === v.palavra);\n  if (exata && (!alvo || alvo.palavra !== exata.palavra)) alvo = exata;\n  if (!alvo) alvo = POR_PRODUTO.find(v => v.funil || v.inteira\n    ? new RegExp('comenta\\\\W+' + v.palavra + '([^a-z0-9]|$)').test(legenda) || texto.replace(/[^a-z0-9]/g, '') === v.palavra\n    : texto.includes(v.palavra) || legenda.includes(v.palavra)) || null;\n  // Reel sem correspondência: manda o índice com os links de todos os vídeos\n  // MON-312 + regra de separação de canais: na segunda_conta só o funil; o resto não tem resposta.\n  if (c.igUserId === 'ID_DA_SEGUNDA_CONTA' && !(alvo && alvo.funil)) return;\n  if (!alvo) alvo = { tipo: 'link', nome: 'os links de todos os vídeos', url: 'https://o-teu-site.exemplo/go/' };  // funil (2026-10-17)\n  if (alvo.funil) {\n    const P = alvo.palavra.toUpperCase();\n    if (!temPalavra(texto.replace(/-/g, ''), alvo.palavra)) {\n      // Sem a palavra: só a resposta pública a convidar, nunca o link, sem DM.\n      out.push({ json: { ...c, permalink, publica: FUNIL[tipoComentario(texto)].replace('PALAVRA', P), enviarDm: false } });\n      return;\n    }\n    const publica = resposta(alvo, c.username);\n    out.push({ json: { ...c, permalink, publica, enviarDm: true, mensagem: { text: sorteia(ABERTURAS, 'abertura') + '\\n\\n' + FUNIL.dm.replace('LINK', alvo.url) } } });\n    return;\n  }\n  const publica = resposta(alvo, c.username);\n  // DM de abertura (igual ao ManyChat): texto + botão \"Quero o link\".\n  // O destino vai escondido no payload do botão.\n  const payload = 'LINK|' + JSON.stringify({ n: alvo.nome, u: alvo.url, l: alvo.lista || '', t: alvo.titulo || '', s: alvo.sub || '', b: alvo.botao || '' });\n  const mensagem = {\n    text: `${sorteia(ABERTURAS, 'abertura')}\\n\\nCarrega no botão e envio-te já ${alvo.abertura || alvo.nome + ' 🚀'}`,\n    quick_replies: [{ content_type: 'text', title: 'Quero o link 🔗', payload }],\n  };\n  out.push({ json: { ...c, permalink, publica, enviarDm: true, mensagem } });\n});\nreturn out;\n"
+      }
+    },
+    {
+      "id": "ad5ad3df-d51c-42b6-9567-afd3c38582fa",
+      "name": "Resposta pública",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "position": [
+        1040,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.instagram.com/v23.0/{{ $json.commentId }}/replies",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: $json.publica }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "O teu token (cria esta credencial)"
+        }
+      }
+    },
+    {
+      "id": "4e4f695a-a390-4059-ae1c-16e9d77701e1",
+      "name": "DM privado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "position": [
+        1296,
+        368
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.instagram.com/v23.0/{{ $json.igUserId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { comment_id: $json.commentId }, message: $json.mensagem }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "O teu token (cria esta credencial)"
+        }
+      }
+    },
+    {
+      "id": "3b3ffdf9-1fa8-41fb-89d4-c4f79b7ed653",
+      "name": "Extrair cliques no botão",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        560
+      ],
+      "parameters": {
+        "jsCode": "// Quando a pessoa carrega em \"Quero o link\", o Instagram manda um evento de mensagem.\n// Aqui apanhamos esse clique e preparamos a mensagem final com o botão do link.\nconst SITE = 'https://o-teu-site.exemplo/go/';  // regra do funil (nunca o link direto); MON-503\nconst out = [];\nfor (const item of $input.all()) {\n  const body = item.json.body || {};\n  for (const entry of body.entry || []) {\n    if (entry.id === 'ID_DA_SEGUNDA_CONTA') continue;  // MON-312: o botão e o follow-up são só da @a_tua_conta\n    for (const ev of entry.messaging || []) {\n      // 02/11: a Meta passou a mandar o clique em \"Quero o link\" como eco (sender = nós, recipient = a pessoa).\n      const eco = !!(ev.message && ev.message.is_echo);\n      if (eco && !(ev.message.quick_reply && ev.message.quick_reply.payload)) continue;  // eco das nossas mensagens\n      const p = (ev.message && ev.message.quick_reply && ev.message.quick_reply.payload)\n             || (ev.postback && ev.postback.payload) || '';\n      if (!p.startsWith('LINK|')) continue;\n      let alvo;\n      try { alvo = JSON.parse(p.slice(5)); } catch (e) { continue; }\n      let mensagem;\n      if (alvo.l) {\n        mensagem = { text: `Aqui estão ${alvo.n} 👇\\n\\n${alvo.l}` };\n      } else {\n        mensagem = { attachment: { type: 'template', payload: {\n          template_type: 'generic',\n          elements: [{\n            title: (alvo.t || `Aqui está ${alvo.n} 👇`).slice(0, 80),\n            ...(alvo.s ? { subtitle: alvo.s.slice(0, 80) } : {}),\n            buttons: [{ type: 'web_url', url: alvo.u,\n                        title: alvo.b || (alvo.u.includes('github.com') ? 'Abrir no GitHub' : 'Abrir o link') }],\n          }],\n        }}};\n      }\n      // Mensagem enviada 5 minutos depois (a janela de 24h está aberta porque a pessoa carregou no botão).\n      const followup = { attachment: { type: 'template', payload: {\n        template_type: 'generic',\n        elements: [{\n          title: 'Gostaste? 🙌',\n          subtitle: 'Segue a @a_tua_conta para mais IA, homelab e automação. E vê os links de todos os vídeos.',\n          buttons: [\n            { type: 'web_url', url: 'https://www.instagram.com/a_tua_conta', title: 'Seguir no Instagram' },\n            { type: 'web_url', url: SITE, title: 'Ver todos os links' },\n          ],\n        }],\n      }}};\n      const pessoa = eco ? (ev.recipient && ev.recipient.id) : (ev.sender && ev.sender.id);\n      if (!pessoa || pessoa === entry.id) continue;\n      const visto = $getWorkflowStaticData('global');  // o mesmo clique pode chegar pelas duas vias: link só 1 vez\n      visto.cliques = visto.cliques || {};\n      const chave = pessoa + '|' + p, agora = Date.now();\n      if (visto.cliques[chave] && agora - visto.cliques[chave] < 30 * 60 * 1000) continue;\n      visto.cliques[chave] = agora;\n      for (const [k, t] of Object.entries(visto.cliques)) if (agora - t > 24 * 3600 * 1000) delete visto.cliques[k];\n      out.push({ json: { igUserId: entry.id, senderId: pessoa, mensagem, followup } });\n    }\n  }\n}\nreturn out;\n"
+      }
+    },
+    {
+      "id": "ae7d3419-8e34-456b-835c-66a00ec574de",
+      "name": "Enviar link",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "position": [
+        528,
+        560
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.instagram.com/v23.0/{{ $json.igUserId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { id: $json.senderId }, message: $json.mensagem }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "O teu token (cria esta credencial)"
+        }
+      }
+    },
+    {
+      "id": "afad56b1-61c1-4b08-80ea-ef9ad138e2ac",
+      "name": "Esperar 5 min",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        784,
+        560
+      ],
+      "parameters": {
+        "unit": "minutes"
+      }
+    },
+    {
+      "id": "5887488b-4976-44bb-9fe9-453081e1b75e",
+      "name": "Follow-up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "position": [
+        1040,
+        560
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.instagram.com/v23.0/{{ $('Extrair cliques no botão').item.json.igUserId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { id: $('Extrair cliques no botão').item.json.senderId }, message: $('Extrair cliques no botão').item.json.followup }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "O teu token (cria esta credencial)"
+        }
+      }
+    },
+    {
+      "id": "b1e0c0de-0001-4000-8000-000000000001",
+      "name": "Registar publicação (POST)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        860
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "registar-publicacao",
+        "options": {}
+      }
+    },
+    {
+      "id": "b1e0c0de-0001-4000-8000-000000000002",
+      "name": "Preparar registo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        860
+      ],
+      "parameters": {
+        "jsCode": "// Recebe do agente que publicou (Composio + Zernio) os dados do vídeo.\n// Body esperado (JSON): { segredo, dm_nome, dm_url, legenda?, titulo?, media_id?, permalink? }\n// Basta UM de: media_id, permalink ou legenda. Sem segredo certo, não faz nada.\nconst SEGREDO = 'TROCA_PELO_TEU_SEGREDO';\nconst out = [];\nfor (const item of $input.all()) {\n  const b = item.json.body || {};\n  if ((b.segredo || '') !== SEGREDO) continue;\n  if (!b.dm_url) continue;\n  const legenda = String(b.legenda || b.titulo || '').trim();\n  out.push({ json: {\n    media_id: b.media_id ? String(b.media_id) : '',\n    permalink: String(b.permalink || ''),\n    legenda,\n    titulo: String(b.titulo || ''),\n    dm_nome: String(b.dm_nome || 'o link do vídeo'),\n    dm_url: String(b.dm_url),\n    recebido_em: new Date().toISOString(),\n  }});\n}\nreturn out;\n"
+      }
+    },
+    {
+      "id": "b1e0c0de-0001-4000-8000-000000000003",
+      "name": "Listar reels",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "position": [
+        528,
+        860
+      ],
+      "parameters": {
+        "url": "=https://graph.instagram.com/v23.0/{{ $json.media_id ? $json.media_id : 'me/media' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "value": "id,caption,permalink,media_type,media_product_type,timestamp",
+              "name": "fields"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "O teu token (cria esta credencial)"
+        }
+      }
+    },
+    {
+      "id": "b1e0c0de-0001-4000-8000-000000000004",
+      "name": "Encontrar reel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        860
+      ],
+      "parameters": {
+        "jsCode": "// Procura, nos últimos reels da conta, o que corresponde ao vídeo registado.\n// Ordem: media_id > código do permalink > legenda (início da legenda, sem acentos nem espaços a mais).\n// Se encontrar, grava media_id -> {nome, url} na tabela automática que o nó \"Escolher link\" lê.\nconst reg = $('Preparar registo').first().json;\nconst tentativa = $runIndex + 1;\nconst norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, ' ').trim();\nconst codigo = p => { const m = String(p || '').match(/\\/(?:reel|p|reels)\\/([A-Za-z0-9_-]+)/); return m ? m[1] : ''; };\nconst resp = $input.first().json || {};\nconst lista = resp.data ? resp.data : (resp.id ? [resp] : []);\nconst alvoCodigo = codigo(reg.permalink);\nconst alvoLegenda = norm(reg.legenda).slice(0, 80);\nlet achado = null;\nfor (const m of lista) {\n  if (reg.media_id && String(m.id) === reg.media_id) { achado = m; break; }\n  if (alvoCodigo && codigo(m.permalink) === alvoCodigo) { achado = m; break; }\n  if (alvoLegenda.length >= 12) {\n    const cap = norm(m.caption);\n    if (cap.startsWith(alvoLegenda) || cap.includes(alvoLegenda)) { achado = m; break; }\n  }\n}\nif (!achado) {\n  return [{ json: { encontrado: false, tentativa, reels_vistos: lista.length, ...reg } }];\n}\nconst s = $getWorkflowStaticData('global');\ns.links = s.links || {};\ns.links[String(achado.id)] = {\n  nome: reg.dm_nome, url: reg.dm_url, titulo: reg.titulo,\n  permalink: achado.permalink || '', publicado_em: achado.timestamp || '',\n  registado_em: new Date().toISOString(),\n};\nreturn [{ json: { encontrado: true, tentativa, media_id: String(achado.id), permalink: achado.permalink || '', dm_nome: reg.dm_nome, dm_url: reg.dm_url, total_links: Object.keys(s.links).length } }];\n"
+      }
+    },
+    {
+      "id": "b1e0c0de-0001-4000-8000-000000000005",
+      "name": "Encontrado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        860
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.encontrado }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b1e0c0de-0001-4000-8000-000000000006",
+      "name": "Registado",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1296,
+        760
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "b1e0c0de-0001-4000-8000-000000000007",
+      "name": "Tentar de novo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1296,
+        960
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.tentativa }}",
+              "rightValue": 30,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b1e0c0de-0001-4000-8000-000000000008",
+      "name": "Esperar 2 min",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1552,
+        960
+      ],
+      "parameters": {
+        "amount": 2,
+        "unit": "minutes"
+      }
+    },
+    {
+      "id": "b1e0c0de-0001-4000-8000-000000000009",
+      "name": "Desistiu (ver execução)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1552,
+        1160
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "b1e0c0de-0001-4000-8000-000000000279",
+      "name": "Tem DM?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        368
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c279",
+              "leftValue": "={{ $json.enviarDm }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "23809e7c-e50a-4b8d-9144-addbf4f72d69",
+      "name": "segunda_conta? (ler)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        408,
+        472
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c312",
+              "leftValue": "={{ $json.igUserId }}",
+              "rightValue": "ID_DA_SEGUNDA_CONTA",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e2e26cbe-bd0a-4266-8a7c-fbfd524512cf",
+      "name": "segunda_conta? (responder)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        920,
+        360
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c312",
+              "leftValue": "={{ $json.igUserId }}",
+              "rightValue": "ID_DA_SEGUNDA_CONTA",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "9552665c-e8f6-4475-85b9-6febd030ab9c",
+      "name": "Ler reel (segunda_conta)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        528,
+        672
+      ],
+      "parameters": {
+        "url": "=https://graph.instagram.com/v23.0/{{ $json.mediaId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "permalink,caption"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "O teu token (cria esta credencial)"
+        }
+      }
+    },
+    {
+      "id": "4aace36a-8d20-4114-8884-3758b855fd04",
+      "name": "Resposta pública (segunda_conta)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "position": [
+        1040,
+        560
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.instagram.com/v23.0/{{ $json.commentId }}/replies",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: $json.publica }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "O teu token (cria esta credencial)"
+        }
+      }
+    },
+    {
+      "id": "aaecae61-37db-4022-ab78-e8f37101d4e1",
+      "name": "Tem DM? (segunda_conta)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        768
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c279",
+              "leftValue": "={{ $json.enviarDm }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "47e4ab2d-5539-4509-b6bf-51e585b1981e",
+      "name": "DM privado (segunda_conta)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "position": [
+        1296,
+        768
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.instagram.com/v23.0/{{ $json.igUserId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { comment_id: $json.commentId }, message: $json.mensagem }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "O teu token (cria esta credencial)"
+        }
+      }
+    },
+    {
+      "id": "f1ef246c-98ef-576b-ba89-6dd574b3f159",
+      "name": "Atraso humano",
+      "notes": "MON-504: 40 a 180 s antes da resposta pública (resposta instantânea parece robô).",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        852,
+        140
+      ],
+      "parameters": {
+        "amount": "={{ Math.floor(40 + Math.random() * 141) }}",
+        "unit": "seconds"
+      }
+    }
+  ],
+  "connections": {
+    "Meta: verificação (GET)": {
+      "main": [
+        [
+          {
+            "node": "Responder challenge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meta: comentário (POST)": {
+      "main": [
+        [
+          {
+            "node": "Extrair comentários",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extrair cliques no botão",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair cliques no botão": {
+      "main": [
+        [
+          {
+            "node": "Enviar link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar link": {
+      "main": [
+        [
+          {
+            "node": "Esperar 5 min",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esperar 5 min": {
+      "main": [
+        [
+          {
+            "node": "Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair comentários": {
+      "main": [
+        [
+          {
+            "node": "segunda_conta? (ler)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler reel": {
+      "main": [
+        [
+          {
+            "node": "Escolher link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escolher link": {
+      "main": [
+        [
+          {
+            "node": "Atraso humano",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registar publicação (POST)": {
+      "main": [
+        [
+          {
+            "node": "Preparar registo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar registo": {
+      "main": [
+        [
+          {
+            "node": "Listar reels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar reels": {
+      "main": [
+        [
+          {
+            "node": "Encontrar reel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Encontrar reel": {
+      "main": [
+        [
+          {
+            "node": "Encontrado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Encontrado?": {
+      "main": [
+        [
+          {
+            "node": "Registado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tentar de novo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tentar de novo?": {
+      "main": [
+        [
+          {
+            "node": "Esperar 2 min",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Desistiu (ver execução)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esperar 2 min": {
+      "main": [
+        [
+          {
+            "node": "Listar reels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem DM?": {
+      "main": [
+        [
+          {
+            "node": "DM privado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "segunda_conta? (ler)": {
+      "main": [
+        [
+          {
+            "node": "Ler reel (segunda_conta)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ler reel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler reel (segunda_conta)": {
+      "main": [
+        [
+          {
+            "node": "Escolher link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "segunda_conta? (responder)": {
+      "main": [
+        [
+          {
+            "node": "Resposta pública (segunda_conta)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Tem DM? (segunda_conta)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resposta pública",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Tem DM?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem DM? (segunda_conta)": {
+      "main": [
+        [
+          {
+            "node": "DM privado (segunda_conta)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Atraso humano": {
+      "main": [
+        [
+          {
+            "node": "segunda_conta? (responder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,14 @@
+# Exemplo de tarefa de backup do Proxmox (excerto de /etc/pve/jobs.cfg).
+# O mais fácil é criá-la no painel (Datacenter > Backup > Add) e não editar este ficheiro à mão.
+# O id no topo é gerado pelo Proxmox; aqui está um de exemplo.
+
+vzdump: backup-semanal-exemplo
+	schedule sun 12:00
+	all 1
+	mode snapshot
+	compress zstd
+	prune-backups keep-last=2
+	notes-template {{guestname}}
+	script /root/vzdump-hook.sh
+	storage backup-noutra-maquina
+	enabled 1

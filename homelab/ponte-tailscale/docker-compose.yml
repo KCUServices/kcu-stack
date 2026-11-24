@@ -1,0 +1,13 @@
+# Ponte Tailscale: um nginx que encaminha portas do LXC para serviços da rede de casa.
+# Corre num LXC (ou VM) que já está no Tailscale.
+#
+# network_mode: host -> o nginx escuta diretamente nas portas do LXC,
+# por isso cada porta fica logo disponível no endereço Tailscale da máquina.
+services:
+  ponte:
+    image: nginx:alpine
+    container_name: ponte-tailscale
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro

@@ -1,0 +1,283 @@
+/* ============================================================
+   KCU HOMELAB - tema "Vidro ao anoitecer" para o gethomepage
+   Foto de fundo + cartoes de vidro escuro. Ver README.md nesta pasta.
+   KCU Services - PolyForm Noncommercial 1.0.0
+   ============================================================ */
+
+:root {
+  --k-glass: rgba(14, 16, 26, .58);
+  --k-glass-hover: rgba(24, 27, 42, .72);
+  --k-line: rgba(255, 255, 255, .09);
+  --k-line-hot: rgba(255, 255, 255, .26);
+  --k-text: #f3f4f8;
+  --k-muted: #a3a8b8;
+  --k-green: #34d399;
+  --k-radius: 16px;
+}
+
+html, body { color: var(--k-text); }
+
+/* Escurecer a foto em cima e em baixo para o texto ler-se bem */
+#page_wrapper::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(8, 8, 16, .55) 0%, rgba(8, 8, 16, .15) 30%, rgba(8, 8, 16, .25) 70%, rgba(8, 8, 16, .7) 100%);
+}
+#inner_wrapper { position: relative; z-index: 2; }
+#inner_wrapper > div { max-width: 1440px; }
+
+/* ---------- Topo ---------- */
+#information-widgets { margin: 2.5rem 2rem 0 !important; }
+
+#widgets-wrap {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "greet search weather date";
+  align-items: center;
+  column-gap: 2.5rem;
+}
+#information-widgets-right { display: contents !important; }
+
+/* Logotipo: KCU por cima, HOMELAB espacado por baixo */
+.information-widget-greeting { grid-area: greet; }
+.information-widget-greeting span {
+  display: block;
+  margin: 0 !important;
+  font-size: 3rem !important;
+  line-height: .95;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  color: #fff !important;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, .5);
+}
+.information-widget-greeting::after {
+  content: "HOMELAB";
+  display: block;
+  margin-top: .35rem;
+  font-size: .82rem;
+  font-weight: 500;
+  letter-spacing: .5em;
+  color: rgba(255, 255, 255, .78);
+}
+
+/* Pesquisa */
+.information-widget-search { grid-area: search; width: 100%; max-width: 680px; justify-self: center; }
+.information-widget-search > div { height: 3rem !important; margin: 0 !important; }
+.information-widget-search .relative.text-left { position: static !important; }
+.information-widget-search input {
+  border-radius: 999px !important;
+  padding: 0 3.5rem 0 1.4rem !important;
+  font-size: .95rem !important;
+  color: #fff !important;
+  background: var(--k-glass) !important;
+  border: 1px solid var(--k-line) !important;
+  backdrop-filter: blur(22px) saturate(140%);
+  transition: border-color .2s, box-shadow .2s, background .2s;
+}
+.information-widget-search input::placeholder { color: var(--k-muted) !important; }
+.information-widget-search input:focus {
+  outline: none !important;
+  border-color: var(--k-line-hot) !important;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, .08) !important;
+}
+.information-widget-search button {
+  top: .35rem;
+  right: .35rem !important;
+  bottom: .35rem !important;
+  padding: 0 .9rem !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, .1) !important;
+}
+
+/* Tempo */
+#widgets-wrap [class*="information-widget-openmeteo"],
+#widgets-wrap [class*="information-widget-weather"] {
+  grid-area: weather;
+  padding-right: 2.5rem;
+  border-right: 1px solid rgba(255, 255, 255, .22);
+}
+
+/* Data e hora */
+.information-widget-datetime { grid-area: date; }
+.information-widget-datetime span {
+  font-size: 1.15rem !important;
+  font-weight: 600;
+  color: #fff !important;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, .5);
+}
+
+/* ---------- Separadores ---------- */
+#tabs { margin: 2rem 2rem 0 !important; display: flex; justify-content: flex-start; }
+#myTab {
+  display: inline-flex !important;
+  gap: .2rem;
+  padding: .3rem;
+  border-radius: 999px !important;
+  background: var(--k-glass) !important;
+  border: 1px solid var(--k-line);
+  backdrop-filter: blur(22px) saturate(140%);
+}
+#myTab li { width: auto !important; height: auto !important; }
+#myTab button {
+  margin: 0 !important;
+  padding: .45rem 1.35rem;
+  border-radius: 999px !important;
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--k-muted);
+  background: transparent !important;
+  transition: color .2s, background .2s;
+}
+#myTab button:hover { color: #fff; }
+#myTab button[aria-selected="true"] { color: #fff; background: rgba(255, 255, 255, .14) !important; }
+
+/* ---------- Grupos ---------- */
+#layout-groups { margin: 1.4rem 1.5rem .5rem !important; }
+.services-group { padding: .5rem .5rem 0 !important; margin-bottom: 1.3rem; }
+.services-group > button { padding: 0 .25rem; }
+.service-group-icon { width: 1.25rem !important; height: 1.25rem !important; margin-right: .6rem !important; }
+.service-group-icon > div { width: 100% !important; height: 100% !important; background: rgba(255, 255, 255, .85) !important; }
+.service-group-name {
+  font-size: 1.2rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -.01em;
+  color: #fff !important;
+  text-shadow: 0 1px 14px rgba(0, 0, 0, .55);
+}
+.services-group > button > svg { opacity: 0; transition: opacity .2s; }
+.services-group > button:hover > svg { opacity: .7; }
+.services-list { margin-top: .8rem !important; gap: .7rem; }
+
+/* ---------- Cartoes ---------- */
+.service-card {
+  height: 100% !important;
+  margin-bottom: 0 !important;
+  padding: .75rem .8rem !important;
+  border-radius: var(--k-radius) !important;
+  background: var(--k-glass) !important;
+  border: 1px solid var(--k-line);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .28) !important;
+  backdrop-filter: blur(22px) saturate(140%);
+  transition: transform .18s ease, background .18s ease, border-color .18s ease !important;
+}
+.service-card:hover {
+  transform: translateY(-2px);
+  background: var(--k-glass-hover) !important;
+  border-color: var(--k-line-hot);
+}
+
+.service-icon { width: 3rem !important; height: 3rem; }
+.service-icon > div, .service-icon img { width: 36px !important; height: 36px !important; }
+.service-icon > div { background: #e7e9f2 !important; }
+
+.service-name {
+  padding: .1rem .75rem !important;
+  font-size: 1rem !important;
+  font-weight: 650;
+  color: #fff;
+}
+.service-description {
+  margin-top: .1rem;
+  font-size: .78rem !important;
+  font-weight: 400 !important;
+  color: var(--k-muted) !important;
+}
+
+/* Bolinhas de estado */
+.service-tags { top: 1rem !important; right: .9rem !important; gap: .4rem !important; }
+.service-tags .service-tag > div { padding: 0 !important; }
+.service-tags .rounded-full { width: .5rem !important; height: .5rem !important; }
+.service-tags .bg-emerald-500 { background: var(--k-green) !important; box-shadow: 0 0 0 3px rgba(52, 211, 153, .16), 0 0 10px rgba(52, 211, 153, .7); }
+.service-tags .bg-rose-500 { background: #fb7185 !important; box-shadow: 0 0 0 3px rgba(251, 113, 133, .16), 0 0 10px rgba(251, 113, 133, .7); }
+
+/* Numeros por baixo do cartao (Proxmox, Docker) */
+.service-card .service-container:not(.chart),
+.service-card .service-stats {
+  margin-top: .7rem;
+  padding-top: .6rem;
+  border-top: 1px solid var(--k-line);
+}
+.service-card .service-block {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.service-card .service-block > div:first-child { font-size: 1rem; font-weight: 700; color: #fff; }
+.service-card .service-block > div:last-child {
+  font-size: .68rem !important;
+  font-weight: 500;
+  letter-spacing: .04em;
+  color: var(--k-muted);
+}
+
+/* Cartoes com grafico */
+.service-card .service-container.chart { margin-top: .6rem; border-radius: 10px; }
+.service-card:has(.service-container.chart):hover { transform: none; }
+
+/* ---------- Rodape ---------- */
+#footer { padding: 1.25rem 2rem !important; opacity: .5; transition: opacity .2s; }
+#footer:hover { opacity: 1; }
+
+* { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .2) transparent; }
+
+/* ---------- Ecras mais pequenos ---------- */
+@media (max-width: 1100px) {
+  #widgets-wrap {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "greet date" "search search" "weather weather";
+    row-gap: 1rem;
+  }
+  .information-widget-search { max-width: none; }
+  #widgets-wrap [class*="information-widget-openmeteo"],
+  #widgets-wrap [class*="information-widget-weather"] { border-right: 0; padding-right: 0; }
+}
+@media (max-width: 760px) {
+  #information-widgets { margin: 1.4rem 1rem 0 !important; }
+  .information-widget-greeting span { font-size: 2.3rem !important; }
+  .information-widget-datetime span { font-size: .95rem !important; }
+  #tabs { margin: 1.25rem 1rem 0 !important; }
+  #myTab { display: flex !important; width: 100%; }
+  #myTab li { flex: 1; }
+  #myTab button { width: 100%; padding: .5rem .25rem; font-size: .8rem; }
+  #layout-groups { margin: 1rem .5rem !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .service-card, .service-card:hover { transition: none !important; transform: none; }
+}
+
+/* Faixa de estado: sem o nome do processador por baixo do grafico (sobrepunha-se) */
+li[data-name="Processador"] .service-container .bottom-3.left-3,
+li[data-name="CPU"] .service-container .bottom-3.left-3 { display: none; }
+li[data-name="Proxmox"] .service-block > div:first-child { font-size: 1.25rem; }
+
+/* Assinatura no rodape, como na referencia */
+#footer { position: relative; }
+#footer::before {
+  content: "KCU HOMELAB";
+  position: absolute;
+  left: 2rem;
+  bottom: 1.4rem;
+  font-size: .72rem;
+  font-weight: 500;
+  letter-spacing: .22em;
+  color: rgba(255, 255, 255, .75);
+}
+
+/* ---------- Numeros por baixo dos cartoes (ajuste) ---------- */
+.service-card .service-stats { margin-top: .7rem; padding-top: .45rem; border-top: 1px solid var(--k-line); max-height: none !important; }
+.service-card .service-stats .service-container { margin-top: 0 !important; padding-top: 0 !important; border-top: 0 !important; }
+.service-card .service-block { margin: 0 !important; padding: .15rem .1rem !important; min-width: 0; }
+.service-card .service-block-value { font-size: 1rem !important; font-weight: 700 !important; color: #fff; white-space: nowrap; }
+.service-card .service-block-label { font-size: .62rem !important; font-weight: 500 !important; letter-spacing: .08em; color: var(--k-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+/* Cartoes maiores */
+.service-card { padding: .95rem 1rem !important; }
+.service-icon { width: 3.4rem !important; height: 3.4rem; }
+.service-icon > div, .service-icon img { width: 42px !important; height: 42px !important; }
+.service-name { font-size: 1.08rem !important; }
+.service-description { font-size: .8rem !important; }
+.services-list { gap: .9rem !important; }
+.service-group-name { font-size: 1.5rem !important; }
+.services-group { margin-bottom: 1.6rem; }
