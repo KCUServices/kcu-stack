@@ -48,7 +48,7 @@ flowchart LR
 | [Canal do Discord](docs/discord.md) | Onde os alertas, os backups e o agente nos avisam. |
 | [Tema da homepage](tema-homepage) | O `custom.css` da nossa página inicial, pronto a usar. |
 | [Fluxos do n8n](n8n) | Respostas automáticas a comentários: Instagram (comentário → DM com o link) e YouTube. |
-| [Homelab](homelab) | Modelos prontos a adaptar: a [ponte Tailscale](homelab/ponte-tailscale) (um só endereço para todos os serviços de casa) e o [backup semanal do Proxmox](homelab/backup-proxmox) com aviso no Discord. |
+| [Homelab](homelab) | Modelos prontos a adaptar: a [ponte Tailscale](homelab/ponte-tailscale) (um só endereço para todos os serviços de casa), o [backup semanal do Proxmox](homelab/backup-proxmox) com aviso no Discord, a [firewall nos guests](homelab/firewall-guests) (SSH só para quem administra) e a [atualização para o Debian 13](homelab/atualizar-debian13) com backup antes. |
 
 ## Princípios que seguimos
 

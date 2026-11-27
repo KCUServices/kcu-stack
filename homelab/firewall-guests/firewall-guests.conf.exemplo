@@ -1,0 +1,13 @@
+# Copia para firewall-guests.conf (ao lado do firewall-guest.sh) e põe os teus valores.
+# Os endereços abaixo são só exemplos.
+
+# Quem pode entrar por SSH nos guests: o próprio Proxmox e os PCs de onde administras.
+# Separados por espaços. Dá-lhes IP fixo (reserva DHCP no router).
+ADMINS="192.168.1.2 192.168.1.10 192.168.1.11"
+
+# A tua rede local em IPv4. Tudo o que vem daqui continua a entrar como antes, menos o SSH.
+REDE4="192.168.1.0/24"
+
+# Opcional: o prefixo IPv6 da tua rede local (vazio se não usas IPv6).
+# Exemplo: REDE6="2001:db8:1234:5600::/64"
+REDE6=""
